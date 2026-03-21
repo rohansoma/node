@@ -26,10 +26,11 @@ import tkinter as tk
 import cv2
 import numpy as np
 
-from config           import Config
-from cursor_magnet    import CursorMagnet, _AX_AVAILABLE
-from head_tracker     import HeadTracker, OneEuroFilter
-from mouse_controller import MouseController, MOUSE_AVAILABLE
+from config             import Config
+from cursor_magnet      import CursorMagnet, _AX_AVAILABLE
+from head_tracker       import HeadTracker, OneEuroFilter
+from mouse_controller   import MouseController, MOUSE_AVAILABLE
+from scroll_controller  import ScrollController
 
 # Make the project root importable so Voice/ can be found regardless of the
 # working directory the user launches the tracker from.
@@ -56,41 +57,65 @@ def _start_voice() -> None:
 
 class BlinkDetector:
     """
-    Detects double blinks from the Eye Aspect Ratio (EAR).
+    Detects double and triple blinks from the Eye Aspect Ratio (EAR).
 
-    A blink is registered when EAR drops below the threshold for at least
-    BLINK_MIN_FRAMES consecutive frames, then rises again.
-    Two blinks within DOUBLE_BLINK_WINDOW seconds trigger a left click.
-    Single blinks are intentionally ignored (people blink ~15×/min naturally).
+    A blink is registered when EAR drops below threshold for BLINK_MIN_FRAMES
+    consecutive frames, then rises again.
+
+    - Double blink within DOUBLE_BLINK_WINDOW  → left click
+    - Triple blink within DOUBLE_BLINK_WINDOW  → toggle scroll mode
+
+    To distinguish the two: after the 2nd blink the detector waits
+    _TRIPLE_WAIT seconds before firing the click, in case a 3rd arrives.
+    If a 3rd blink comes within that window, it's a scroll toggle (no click).
     """
+
+    _TRIPLE_WAIT = 0.35   # seconds to wait after 2nd blink for possible 3rd
 
     def __init__(self, cfg) -> None:
         self._threshold  = cfg.BLINK_EAR_THRESHOLD
         self._min_frames = cfg.BLINK_MIN_FRAMES
         self._window     = cfg.DOUBLE_BLINK_WINDOW
-        self._consec     = 0     # consecutive frames eye has been closed
+        self._consec     = 0
         self._blink_times: list[float] = []
+        self._pending_click_at: float  = 0.0
 
-    def update(self, ear: float) -> bool:
-        """Feed current EAR. Returns True the moment a double-blink is confirmed."""
+    def update(self, ear: float) -> str | None:
+        """
+        Feed current EAR each frame.
+        Returns 'click', 'scroll_toggle', or None.
+        """
+        now    = time.monotonic()
+        result = None
+
         if ear < self._threshold:
             self._consec += 1
-            return False
+        else:
+            if self._consec >= self._min_frames:
+                # Discard blinks older than the rolling window
+                self._blink_times = [t for t in self._blink_times
+                                     if now - t < self._window]
+                self._blink_times.append(now)
 
-        # Eye just reopened — did a blink complete?
-        if self._consec >= self._min_frames:
-            now = time.monotonic()
-            # Discard blinks outside the rolling window
-            self._blink_times = [t for t in self._blink_times
-                                  if now - t < self._window]
-            self._blink_times.append(now)
-            if len(self._blink_times) >= 2:
-                self._blink_times.clear()
-                self._consec = 0
-                return True   # double blink confirmed
+                if len(self._blink_times) >= 3:
+                    # Triple blink — cancel any pending click, fire scroll toggle
+                    self._blink_times.clear()
+                    self._pending_click_at = 0.0
+                    result = "scroll_toggle"
+                elif len(self._blink_times) == 2:
+                    # Second blink — set timer; wait for possible 3rd
+                    self._pending_click_at = now + self._TRIPLE_WAIT
 
-        self._consec = 0
-        return False
+            self._consec = 0
+
+        # Fire pending click if the triple-wait window has elapsed
+        if self._pending_click_at and now >= self._pending_click_at:
+            self._pending_click_at = 0.0
+            self._blink_times.clear()
+            if result is None:
+                result = "click"
+
+        return result
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -116,7 +141,8 @@ def _draw_overlay(frame: np.ndarray,
                   screen_w: int, screen_h: int,
                   face_found: bool,
                   blink_flash: bool,
-                  magnet_target: dict | None = None) -> np.ndarray:
+                  magnet_target: dict | None = None,
+                  scroll_active: bool = False) -> np.ndarray:
     h, w = frame.shape[:2]
 
     # ── top bar ───────────────────────────────────────────────────────────────
@@ -133,6 +159,9 @@ def _draw_overlay(frame: np.ndarray,
     if blink_flash:
         cv2.putText(frame, "CLICK", (10, 76),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2, cv2.LINE_AA)
+    elif scroll_active:
+        cv2.putText(frame, "SCROLL", (10, 76),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 180, 0), 2, cv2.LINE_AA)
     elif magnet_target is not None:
         cv2.putText(frame, "MAGNET", (10, 76),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 120), 2, cv2.LINE_AA)
@@ -198,6 +227,7 @@ def main() -> None:
     tracker      = HeadTracker(actual_w, actual_h)
     magnet       = CursorMagnet(cfg) if (cfg.MAGNET_ENABLED and _AX_AVAILABLE) else None
     mouse        = MouseController(screen_w, screen_h, cfg, magnet=magnet)
+    scroller     = ScrollController(cfg)
     blinker      = BlinkDetector(cfg)
 
     filter_yaw   = OneEuroFilter(min_cutoff=cfg.FILTER_MIN_CUTOFF, beta=cfg.FILTER_BETA)
@@ -247,12 +277,24 @@ def main() -> None:
 
             yaw   = filter_yaw(raw_yaw)
             pitch = filter_pitch(raw_pitch)
-            cursor_x, cursor_y = mouse.update(yaw, pitch)
-            magnet_target = magnet.current_target() if magnet is not None else None
 
-            # Blink → click
-            if blinker.update(ear):
+            if scroller.enabled:
+                scroller.update(pitch)
+                magnet_target = None
+            else:
+                cursor_x, cursor_y = mouse.update(yaw, pitch)
+                magnet_target = magnet.current_target() if magnet is not None else None
+
+            # Blink gestures
+            action = blinker.update(ear)
+            if action == "click":
                 mouse.click()
+                flash_until = time.monotonic() + 0.4
+            elif action == "scroll_toggle":
+                if scroller.enabled:
+                    scroller.disable()
+                else:
+                    scroller.enable()
                 flash_until = time.monotonic() + 0.4
         else:
             face_found = False
@@ -266,7 +308,8 @@ def main() -> None:
                                     cursor_x, cursor_y,
                                     screen_w, screen_h,
                                     face_found, blink_flash,
-                                    magnet_target)
+                                    magnet_target,
+                                    scroll_active=scroller.enabled)
             cv2.imshow("MouseTracker", display)
 
         # ── Keys ──────────────────────────────────────────────────────────────

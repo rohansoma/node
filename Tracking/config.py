@@ -67,5 +67,11 @@ class Config:
     MAGNET_STICKY_DAMP    = 0.20
     MAGNET_SCAN_INTERVAL  = 10
 
+    # ── Scroll mode ───────────────────────────────────────────────────────────
+    # Activated by voice: "Hey Node scroll" / deactivated: "Hey Node unlock".
+    # Head pitch maps to scroll speed; cursor movement is paused while active.
+    # SCROLL_SPEED_SCALE — max scroll ticks per second (at full pitch deflection).
+    SCROLL_SPEED_SCALE = 20.0
+
     # ── Display ───────────────────────────────────────────────────────────────
     SHOW_DEBUG = True
