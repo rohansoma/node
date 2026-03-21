@@ -19,7 +19,7 @@ class VoiceConfig:
     MAX_RECORD_SECONDS   = 15
 
     # Gemini
-    GEMINI_MODEL      = "gemini-2.5-flash-lite"
+    GEMINI_MODEL      = "gemini-3-flash-preview"
     MAX_HISTORY_TURNS = 12
 
     # Paths

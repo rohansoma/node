@@ -22,7 +22,13 @@ from google.genai import types
 from .commands import (
     open_website,
     search_web,
+    navigate_and_search,
+    find_on_page,
+    wait,
     open_application,
+    type_text,
+    press_keys,
+    recalibrate,
     get_chrome_tabs,
     switch_chrome_tab,
     get_tracker_config,
@@ -37,7 +43,13 @@ from .commands import (
 TOOLS: list = [
     open_website,
     search_web,
+    navigate_and_search,
+    find_on_page,
+    wait,
     open_application,
+    type_text,
+    press_keys,
+    recalibrate,
     get_chrome_tabs,
     switch_chrome_tab,
     get_tracker_config,
@@ -56,10 +68,21 @@ The user controls their computer entirely with head movements, so precise, fast 
 Behaviour rules:
 - Always take action immediately — do not ask clarifying questions unless truly ambiguous.
 - Keep responses to 1–2 short sentences; they are printed to a terminal, not spoken aloud.
-- When the user says "do it again", "repeat that", or similar — look at the conversation history and replay the exact same function call(s).
-- When switching browser tabs: always call get_chrome_tabs first to see what is open, then call switch_chrome_tab with the best matching string.
+- When the user says "do it again", "repeat that", or similar — look at conversation history and replay the exact same function call(s).
+- When switching browser tabs: always call get_chrome_tabs first, then switch_chrome_tab with the best match.
 - After completing an action, confirm it in one sentence (e.g. "Done — opened Spotify.").
-- If multiple actions are requested in one command, call the required functions in sequence.
+
+Multi-step command rules:
+- If a command requires several actions, call the functions one after another in the same response turn.
+- "Go to X and search Y" or "search Y on X" → call navigate_and_search(site, query). Never open_website + wait + type for site searches.
+- "Go to X and do Y" where Y is NOT a search (e.g. "go to GitHub and press enter") → open_website, then wait(2), then the next action.
+- "Open X, search Y, and press enter" → navigate_and_search(X, Y), then press_keys("enter").
+- "Find X on this page" or "search for X here" → find_on_page(X).
+- "Type X and press enter" → type_text(X), then press_keys("enter").
+- "Select all and copy" → press_keys("cmd+a"), then press_keys("cmd+c").
+- "Undo" → press_keys("cmd+z"). "Redo" → press_keys("cmd+shift+z").
+- "Save" → press_keys("cmd+s"). "Close tab" → press_keys("cmd+w"). "New tab" → press_keys("cmd+t").
+- Always use wait() when a page needs time to load before the next interaction.
 """.strip()
 
 

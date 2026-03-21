@@ -17,9 +17,63 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
+import time
 import urllib.parse
 import webbrowser
 import pathlib
+
+try:
+    from pynput.keyboard import Controller as _KbController, Key as _Key
+    _kb = _KbController()
+    _KB_AVAILABLE = True
+except Exception:
+    _kb = None
+    _Key = None
+    _KB_AVAILABLE = False
+
+# Signalled by recalibrate(); checked each frame in Tracking/main.py.
+recalibrate_event = threading.Event()
+
+
+# Maps natural-language key names → pynput Key constants.
+_KEY_MAP: dict[str, object] = {}
+if _Key is not None:
+    _KEY_MAP = {
+        "cmd": _Key.cmd, "command": _Key.cmd, "meta": _Key.cmd,
+        "ctrl": _Key.ctrl, "control": _Key.ctrl,
+        "shift": _Key.shift,
+        "alt": _Key.alt, "option": _Key.alt,
+        "enter": _Key.enter, "return": _Key.enter,
+        "esc": _Key.esc, "escape": _Key.esc,
+        "tab": _Key.tab,
+        "space": _Key.space,
+        "backspace": _Key.backspace,
+        "delete": _Key.delete,
+        "up": _Key.up, "down": _Key.down,
+        "left": _Key.left, "right": _Key.right,
+        "home": _Key.home, "end": _Key.end,
+        "pageup": _Key.page_up, "pagedown": _Key.page_down,
+        **{f"f{i}": getattr(_Key, f"f{i}") for i in range(1, 13)},
+    }
+
+
+# ── Search URL templates for popular sites ────────────────────────────────────
+
+_SITE_SEARCH: dict[str, str] = {
+    "amazon":       "https://www.amazon.com/s?k={q}",
+    "youtube":      "https://www.youtube.com/results?search_query={q}",
+    "reddit":       "https://www.reddit.com/search/?q={q}",
+    "github":       "https://github.com/search?q={q}",
+    "twitter":      "https://twitter.com/search?q={q}",
+    "x":            "https://x.com/search?q={q}",
+    "netflix":      "https://www.netflix.com/search?q={q}",
+    "spotify":      "https://open.spotify.com/search/{q}",
+    "wikipedia":    "https://en.wikipedia.org/w/index.php?search={q}",
+    "ebay":         "https://www.ebay.com/sch/i.html?_nkw={q}",
+    "google":       "https://www.google.com/search?q={q}",
+    "bing":         "https://www.bing.com/search?q={q}",
+}
 
 
 # ── Web ───────────────────────────────────────────────────────────────────────
@@ -48,6 +102,68 @@ def search_web(query: str) -> str:
     return f"Searching Google for: {query}"
 
 
+def navigate_and_search(site: str, query: str) -> str:
+    """Go to a website and immediately search for something on it.
+
+    Prefer this over open_website + wait + type_text for any command like
+    "go to X and search Y", "search Y on X", "find Y on X", "look up Y on X".
+
+    Handles Amazon, YouTube, Reddit, GitHub, Twitter/X, Netflix, Spotify,
+    Wikipedia, eBay, Google, Bing.  For any other site it opens the site's
+    homepage and performs a Google "site:" search as a fallback.
+
+    Args:
+        site:  The site name or domain, e.g. "amazon", "youtube", "reddit.com".
+        query: What to search for.
+    """
+    key = site.lower().removesuffix(".com").removesuffix(".org").removesuffix(".net").strip()
+    encoded = urllib.parse.quote_plus(query)
+
+    if key in _SITE_SEARCH:
+        url = _SITE_SEARCH[key].format(q=encoded)
+    else:
+        # Fallback: Google site-restricted search
+        url = f"https://www.google.com/search?q=site:{urllib.parse.quote(site)}+{encoded}"
+
+    webbrowser.open(url)
+    return f"Searching {site} for: {query}"
+
+
+def find_on_page(query: str) -> str:
+    """Open the browser's find-in-page bar and search for text on the current page.
+
+    Use this when the user says "find X on this page", "search for X here",
+    "look for X on this page", or "where is X".
+
+    Args:
+        query: The text to find on the current page.
+    """
+    if not _KB_AVAILABLE:
+        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
+    # Open find bar
+    with _kb.pressed(_KEY_MAP["cmd"]):
+        _kb.press("f")
+        _kb.release("f")
+    time.sleep(0.15)   # let the find bar appear
+    _kb.type(query)
+    return f'Find-in-page: "{query}"'
+
+
+def wait(seconds: float) -> str:
+    """Pause execution for a number of seconds.
+
+    Use this between steps that require a page or app to finish loading —
+    e.g. after open_website before typing in a search box.
+    Maximum wait is 5 seconds.
+
+    Args:
+        seconds: How long to wait, e.g. 1.5, 2, 3.
+    """
+    duration = min(float(seconds), 5.0)
+    time.sleep(duration)
+    return f"Waited {duration:.1f}s"
+
+
 # ── Applications ──────────────────────────────────────────────────────────────
 
 def open_application(name: str) -> str:
@@ -61,6 +177,79 @@ def open_application(name: str) -> str:
     if result.returncode != 0:
         return f"Could not open '{name}': {result.stderr.strip() or 'app not found'}"
     return f"Opened {name}"
+
+
+# ── Typing & keyboard ─────────────────────────────────────────────────────────
+
+def type_text(text: str) -> str:
+    """Type text into the currently focused input field.
+
+    Use this when the user says something like "type hello world" or
+    "write my email address" — type the spoken words exactly as given.
+
+    Args:
+        text: The exact text to type.
+    """
+    if not _KB_AVAILABLE:
+        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
+    _kb.type(text)
+    return f'Typed: "{text}"'
+
+
+def press_keys(keys: str) -> str:
+    """Press a key or keyboard shortcut.
+
+    Accepts natural-language key descriptions and converts them to actual
+    key presses.  Modifier keys are combined with "+".
+
+    Examples the model should produce:
+        "cmd+s"           → ⌘S (save)
+        "cmd+shift+t"     → reopen closed tab
+        "cmd+c"           → copy
+        "cmd+v"           → paste
+        "cmd+z"           → undo
+        "cmd+a"           → select all
+        "escape"          → dismiss / cancel
+        "enter"           → confirm
+        "tab"             → next field
+        "backspace"       → delete one character
+        "cmd+left"        → beginning of line
+        "cmd+shift+left"  → select to beginning of line
+        "up" / "down"     → arrow keys
+
+    Args:
+        keys: A "+"-separated string of key names, e.g. "cmd+s", "escape",
+              "cmd+shift+3".  Single characters are typed as-is (e.g. "a").
+              Always use lowercase.
+    """
+    if not _KB_AVAILABLE:
+        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
+
+    parts   = [k.strip().lower() for k in keys.split("+")]
+    pressed = []
+    try:
+        for part in parts:
+            key = _KEY_MAP.get(part) or (part if len(part) == 1 else None)
+            if key is None:
+                return f"Unknown key: '{part}'"
+            _kb.press(key)
+            pressed.append(key)
+    finally:
+        for key in reversed(pressed):
+            _kb.release(key)
+
+    return f"Pressed: {keys}"
+
+
+def recalibrate() -> str:
+    """Re-calibrate the head-tracker neutral position.
+
+    Call this when the user says "recalibrate", "reset the tracker",
+    "re-centre", or similar.  The user should hold their head in their
+    natural forward-facing position before or immediately after saying this.
+    """
+    recalibrate_event.set()
+    return "Recalibrating — hold your head in neutral position."
 
 
 # ── Browser tab management ────────────────────────────────────────────────────

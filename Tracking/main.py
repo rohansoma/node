@@ -280,6 +280,11 @@ def main() -> None:
     print("Tip: if cursor goes the wrong direction, flip INVERT_YAW / INVERT_PITCH in config.py")
 
     # ── Tracking loop ─────────────────────────────────────────────────────────
+    try:
+        from Voice.commands import recalibrate_event as _recal_event
+    except ImportError:
+        _recal_event = None
+
     show_debug    = cfg.SHOW_DEBUG
     yaw = pitch   = 0.0
     ear           = 0.3
@@ -295,6 +300,14 @@ def main() -> None:
         if not ret:
             print("Error: failed to read camera frame")
             break
+
+        # ── Voice-requested recalibration ─────────────────────────────────────
+        if _recal_event is not None and _recal_event.is_set():
+            _recal_event.clear()
+            tracker.reset_neutral()
+            filter_yaw.reset()
+            filter_pitch.reset()
+            print("Neutral recalibrated (voice command).")
 
         result = tracker.process(frame)
 
