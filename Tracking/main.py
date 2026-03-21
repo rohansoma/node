@@ -19,6 +19,8 @@ Controls (debug window must be focused):
 from __future__ import annotations
 
 import pathlib
+import os
+import json
 import sys
 import time
 import tkinter as tk
@@ -49,6 +51,27 @@ def _start_voice() -> None:
         pass   # google-genai / requests not installed — voice simply won't run
     except Exception as exc:
         print(f"[Voice] Could not start: {exc}")
+
+
+def _emit_telemetry(screen_w: int, screen_h: int,
+                    cursor_x: int, cursor_y: int,
+                    face_found: bool,
+                    magnet_target: dict | None = None) -> None:
+    payload = {
+        "type": "telemetry",
+        "screen_w": screen_w,
+        "screen_h": screen_h,
+        "cursor_x": cursor_x,
+        "cursor_y": cursor_y,
+        "face_found": face_found,
+        "magnet_target": None,
+    }
+    if magnet_target is not None:
+        payload["magnet_target"] = {
+            "cx": magnet_target.get("cx"),
+            "cy": magnet_target.get("cy"),
+        }
+    print(f"__HANDSFREE__{json.dumps(payload)}", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -207,6 +230,9 @@ def _draw_overlay(frame: np.ndarray,
 
 def main() -> None:
     cfg = Config()
+    embedded_mode = os.environ.get("HANDSFREE_EMBEDDED") == "1"
+    if embedded_mode:
+        cfg.SHOW_DEBUG = False
 
     screen_w, screen_h = _get_screen_size()
     print(f"Screen: {screen_w}×{screen_h} logical px")
@@ -240,8 +266,9 @@ def main() -> None:
     print("MouseTracker running.  Hold your head in your NEUTRAL position —")
     print("the first detected frame sets the centre point.")
     print()
-    print("  R              — recalibrate neutral")
-    print("  S              — toggle debug window")
+    if not embedded_mode:
+        print("  R              — recalibrate neutral")
+        print("  S              — toggle debug window")
     print("  Q / ESC        — quit")
     print("  Double blink   — left click")
     print()
@@ -300,6 +327,14 @@ def main() -> None:
             face_found = False
 
         blink_flash = time.monotonic() < flash_until
+        _emit_telemetry(
+            screen_w=screen_w,
+            screen_h=screen_h,
+            cursor_x=cursor_x,
+            cursor_y=cursor_y,
+            face_found=face_found,
+            magnet_target=magnet_target,
+        )
 
         # ── Display ───────────────────────────────────────────────────────────
         if show_debug:
@@ -313,19 +348,20 @@ def main() -> None:
             cv2.imshow("MouseTracker", display)
 
         # ── Keys ──────────────────────────────────────────────────────────────
-        key = cv2.waitKey(1) & 0xFF
-        if key in (ord('q'), 27):
-            break
-        elif key == ord('r'):
-            tracker.reset_neutral()
-            filter_yaw.reset()
-            filter_pitch.reset()
-            print("Neutral recalibrated — hold still for a moment.")
-        elif key == ord('s'):
-            show_debug = not show_debug
-            if not show_debug:
-                cv2.destroyAllWindows()
-            print(f"Debug window {'on' if show_debug else 'off'}.")
+        if show_debug:
+            key = cv2.waitKey(1) & 0xFF
+            if key in (ord('q'), 27):
+                break
+            elif key == ord('r'):
+                tracker.reset_neutral()
+                filter_yaw.reset()
+                filter_pitch.reset()
+                print("Neutral recalibrated — hold still for a moment.")
+            elif key == ord('s'):
+                show_debug = not show_debug
+                if not show_debug:
+                    cv2.destroyAllWindows()
+                print(f"Debug window {'on' if show_debug else 'off'}.")
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
     if magnet is not None:

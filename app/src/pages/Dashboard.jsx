@@ -1,20 +1,86 @@
 import React from "react";
 
-export default function Dashboard({ navigate }) {
+function formatStatus(status) {
+    switch (status) {
+        case "running":
+            return "Running";
+        case "starting":
+            return "Starting";
+        case "stopping":
+            return "Stopping";
+        case "error":
+            return "Error";
+        default:
+            return "Stopped";
+    }
+}
+
+export default function Dashboard({ navigate, trackingState, controls }) {
+    const isRunning = trackingState.status === "running" || trackingState.status === "starting";
+    const lastLog = trackingState.logs?.[trackingState.logs.length - 1];
+    const telemetry = trackingState.telemetry;
+
     return (
         <div className="px-5 py-6 max-w-[800px] mx-auto font-sans">
             <h1 className="text-[26px] font-semibold mb-6 tracking-tight text-black">Welcome</h1>
             <div className="bg-[#ffffff] rounded-xl border border-[#e5e5ea] p-6 shadow-sm mb-6">
-                <h2 className="text-[14px] font-medium mb-1.5 text-black">System Status</h2>
-                <p className="text-[#8a8a8e] text-[13px] mb-4">
-                    All systems are running smoothly. Your custom light theme is active.
-                </p>
-                <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2 text-[13px] font-medium text-black/90 bg-[#f2f2f7] px-3 py-1.5 rounded-md border border-[#e5e5ea]">
-                        <span className="w-2 h-2 rounded-full bg-[#34c759]"></span>
-                        Online
+                <div className="flex items-start justify-between gap-4">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="text-[14px] font-medium mb-1.5 text-black">System Status</h2>
+                        <p className="text-[#8a8a8e] text-[13px] mb-4">
+                            The tracker and voice listener start automatically when the app opens.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-2 text-[13px] font-medium text-black/90 bg-[#f2f2f7] px-3 py-1.5 rounded-md border border-[#e5e5ea]">
+                                <span
+                                    className={`w-2 h-2 rounded-full ${
+                                        trackingState.status === "running"
+                                            ? "bg-[#34c759]"
+                                            : trackingState.status === "error"
+                                              ? "bg-[#ff3b30]"
+                                              : "bg-[#8a8a8e]"
+                                    }`}
+                                />
+                                {formatStatus(trackingState.status)}
+                            </div>
+                            {trackingState.pid && (
+                                <div className="text-[12px] text-[#8a8a8e] bg-[#f2f2f7] px-3 py-1.5 rounded-md border border-[#e5e5ea]">
+                                    PID {trackingState.pid}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-3">
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={controls.startTracking}
+                                disabled={isRunning}
+                                className="px-3 py-1.5 rounded-md text-[13px] font-medium bg-[#007aff] text-white disabled:bg-[#b8d7ff] disabled:cursor-not-allowed"
+                            >
+                                Start
+                            </button>
+                            <button
+                                onClick={controls.stopTracking}
+                                disabled={!isRunning && trackingState.status !== "stopping"}
+                                className="px-3 py-1.5 rounded-md text-[13px] font-medium bg-[#e5e5ea] text-black disabled:text-[#8a8a8e] disabled:cursor-not-allowed"
+                            >
+                                Stop
+                            </button>
+                        </div>
+                        <TrackerMiniMap telemetry={telemetry} compact />
                     </div>
                 </div>
+                <p className="text-[#8a8a8e] text-[13px] mb-4">
+                    Tracking/main.py runs in the background without opening the OpenCV debug window.
+                </p>
+                {trackingState.lastError && (
+                    <p className="text-[#c1272d] text-[12px] mt-3">{trackingState.lastError}</p>
+                )}
+                {lastLog && (
+                    <p className="mt-3 text-[12px] text-[#6e6e73] whitespace-pre-wrap break-words">
+                        {lastLog.message}
+                    </p>
+                )}
             </div>
 
             <div className="flex flex-col gap-4">
@@ -42,4 +108,74 @@ export default function Dashboard({ navigate }) {
             </div>
         </div>
     );
+}
+
+function TrackerMiniMap({ telemetry, compact = false }) {
+    const mapWidth = compact ? 120 : 240;
+    const mapHeight = compact ? 80 : 160;
+    const screenW = telemetry?.screen_w ?? 1;
+    const screenH = telemetry?.screen_h ?? 1;
+    const cursorLeft = telemetry
+        ? clamp((telemetry.cursor_x / screenW) * mapWidth, 6, mapWidth - 6)
+        : mapWidth / 2;
+    const cursorTop = telemetry
+        ? clamp((telemetry.cursor_y / screenH) * mapHeight, 6, mapHeight - 6)
+        : mapHeight / 2;
+    const targetLeft = telemetry?.magnet_target
+        ? clamp((telemetry.magnet_target.cx / screenW) * mapWidth, 6, mapWidth - 6)
+        : null;
+    const targetTop = telemetry?.magnet_target
+        ? clamp((telemetry.magnet_target.cy / screenH) * mapHeight, 6, mapHeight - 6)
+        : null;
+
+    return (
+        <div className={`rounded-xl border border-[#2d2d2f] bg-[#2a2a2d] ${compact ? "p-2" : "p-3"}`}>
+            <div
+                className="relative overflow-hidden rounded-lg border border-[#5a5a60] bg-[#28282b]"
+                style={{ width: mapWidth, height: mapHeight }}
+            >
+                <div className="absolute inset-x-0 top-1/2 h-px bg-[#4a4a50]" />
+                <div className="absolute inset-y-0 left-1/2 w-px bg-[#4a4a50]" />
+                {targetLeft !== null && targetTop !== null && (
+                    <div
+                        className="absolute h-3 w-3 border border-[#00c878]"
+                        style={{
+                            left: targetLeft - 6,
+                            top: targetTop - 6,
+                            transform: "rotate(45deg)",
+                        }}
+                    />
+                )}
+                <div
+                    className={`absolute ${compact ? "h-3 w-3 border" : "h-4 w-4 border-2"} rounded-full ${
+                        telemetry?.face_found ? "border-[#00c8ff] bg-[#00c8ff]" : "border-[#8a8a8e] bg-[#8a8a8e]"
+                    }`}
+                    style={{
+                        left: cursorLeft - (compact ? 6 : 8),
+                        top: cursorTop - (compact ? 6 : 8),
+                    }}
+                />
+            </div>
+            {compact ? (
+                <div className="mt-2 text-[11px] text-[#b7b7bc]">
+                    {telemetry?.face_found ? "Face detected" : "Waiting for face"}
+                </div>
+            ) : (
+                <div className="mt-3 flex flex-wrap gap-2 text-[12px] text-[#b7b7bc]">
+                    <span className="rounded-md border border-[#3b3b40] bg-[#222225] px-2 py-1">
+                        Cursor {Math.round(telemetry?.cursor_x ?? 0)}, {Math.round(telemetry?.cursor_y ?? 0)}
+                    </span>
+                    {telemetry?.magnet_target && (
+                        <span className="rounded-md border border-[#3b3b40] bg-[#222225] px-2 py-1">
+                            Target {Math.round(telemetry.magnet_target.cx)}, {Math.round(telemetry.magnet_target.cy)}
+                        </span>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
 }
