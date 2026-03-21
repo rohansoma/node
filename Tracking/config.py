@@ -44,5 +44,28 @@ class Config:
     BLINK_MIN_FRAMES     = 2     # eye must stay closed this many frames to register
     DOUBLE_BLINK_WINDOW  = 0.6   # max seconds between two blinks for a double-click
 
+    # ── Cursor Magnetism ──────────────────────────────────────────────────────
+    # Smooth attraction toward nearby UI buttons (validated CHI 2005 model).
+    # Requires Accessibility permission: System Settings → Privacy & Security.
+    #
+    # MAGNET_RADIUS        — pixel radius to acquire a lock on a button.
+    # MAGNET_UNLOCK_RADIUS — pixel radius to release the lock (> RADIUS).
+    #                        The gap between the two forms a hysteresis band
+    #                        that prevents flickering between nearby buttons.
+    # MAGNET_ALPHA_MAX     — max fraction of the gap closed per frame (0–1).
+    # MAGNET_ALPHA_SMOOTH  — LPF coefficient on the alpha value (0–1).
+    #                        Higher = slower but smoother attraction buildup.
+    # MAGNET_SPEED_SCALE   — px/frame at which attraction is halved.
+    # MAGNET_STICKY_DAMP   — extra centre-pull inside the target bounding box.
+    # MAGNET_SCAN_INTERVAL — frames between Accessibility scans (10 ≈ 33 ms).
+    MAGNET_ENABLED        = True
+    MAGNET_RADIUS         = 130
+    MAGNET_UNLOCK_RADIUS  = 185
+    MAGNET_ALPHA_MAX      = 0.30
+    MAGNET_ALPHA_SMOOTH   = 0.78
+    MAGNET_SPEED_SCALE    = 7.0
+    MAGNET_STICKY_DAMP    = 0.20
+    MAGNET_SCAN_INTERVAL  = 10
+
     # ── Display ───────────────────────────────────────────────────────────────
     SHOW_DEBUG = True

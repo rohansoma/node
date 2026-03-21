@@ -2,3 +2,8 @@ mediapipe>=0.10.0
 opencv-python>=4.8.0
 numpy>=1.24.0
 pynput>=1.7.6
+
+# Voice command system
+google-genai>=1.0.0
+requests>=2.31.0
+sounddevice>=0.4.6

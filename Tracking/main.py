@@ -18,6 +18,7 @@ Controls (debug window must be focused):
 
 from __future__ import annotations
 
+import pathlib
 import sys
 import time
 import tkinter as tk
@@ -26,8 +27,27 @@ import cv2
 import numpy as np
 
 from config           import Config
+from cursor_magnet    import CursorMagnet, _AX_AVAILABLE
 from head_tracker     import HeadTracker, OneEuroFilter
 from mouse_controller import MouseController, MOUSE_AVAILABLE
+
+# Make the project root importable so Voice/ can be found regardless of the
+# working directory the user launches the tracker from.
+_PROJECT_ROOT = str(pathlib.Path(__file__).resolve().parent.parent)
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
+
+def _start_voice() -> None:
+    """Try to start the voice command thread. Silently skips if not configured."""
+    try:
+        from Voice.main   import start_background_thread
+        from Voice.config import VoiceConfig
+        start_background_thread(VoiceConfig())
+    except ImportError:
+        pass   # google-genai / requests not installed — voice simply won't run
+    except Exception as exc:
+        print(f"[Voice] Could not start: {exc}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -95,7 +115,8 @@ def _draw_overlay(frame: np.ndarray,
                   cursor_x: int, cursor_y: int,
                   screen_w: int, screen_h: int,
                   face_found: bool,
-                  blink_flash: bool) -> np.ndarray:
+                  blink_flash: bool,
+                  magnet_target: dict | None = None) -> np.ndarray:
     h, w = frame.shape[:2]
 
     # ── top bar ───────────────────────────────────────────────────────────────
@@ -112,6 +133,9 @@ def _draw_overlay(frame: np.ndarray,
     if blink_flash:
         cv2.putText(frame, "CLICK", (10, 76),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 220, 255), 2, cv2.LINE_AA)
+    elif magnet_target is not None:
+        cv2.putText(frame, "MAGNET", (10, 76),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 120), 2, cv2.LINE_AA)
     elif not MOUSE_AVAILABLE:
         cv2.putText(frame, "Mouse OFF — grant Accessibility permission to Terminal",
                     (10, 72), cv2.FONT_HERSHEY_SIMPLEX, 0.43, (0, 100, 255), 1, cv2.LINE_AA)
@@ -125,6 +149,17 @@ def _draw_overlay(frame: np.ndarray,
     mx, my = map_x0 + map_w // 2, map_y0 + map_h // 2
     cv2.line(frame, (map_x0, my), (map_x0 + map_w, my), (60, 60, 60), 1)
     cv2.line(frame, (mx, map_y0), (mx, map_y0 + map_h), (60, 60, 60), 1)
+
+    # Draw magnet target on the mini-map (diamond marker)
+    if magnet_target is not None:
+        tgt_mx = max(map_x0 + 3, min(map_x0 + map_w - 3,
+                     map_x0 + int(magnet_target["cx"] / screen_w * map_w)))
+        tgt_my = max(map_y0 + 3, min(map_y0 + map_h - 3,
+                     map_y0 + int(magnet_target["cy"] / screen_h * map_h)))
+        pts = np.array([[tgt_mx, tgt_my - 4], [tgt_mx + 4, tgt_my],
+                         [tgt_mx, tgt_my + 4], [tgt_mx - 4, tgt_my]], np.int32)
+        cv2.polylines(frame, [pts], isClosed=True, color=(0, 200, 120), thickness=1)
+
     dot_mx = max(map_x0 + 3, min(map_x0 + map_w - 3, map_x0 + int(cursor_x / screen_w * map_w)))
     dot_my = max(map_y0 + 3, min(map_y0 + map_h - 3, map_y0 + int(cursor_y / screen_h * map_h)))
     cv2.circle(frame, (dot_mx, dot_my), 5, (0, 200, 255), -1)
@@ -161,11 +196,15 @@ def main() -> None:
 
     # ── Components ────────────────────────────────────────────────────────────
     tracker      = HeadTracker(actual_w, actual_h)
-    mouse        = MouseController(screen_w, screen_h, cfg)
+    magnet       = CursorMagnet(cfg) if (cfg.MAGNET_ENABLED and _AX_AVAILABLE) else None
+    mouse        = MouseController(screen_w, screen_h, cfg, magnet=magnet)
     blinker      = BlinkDetector(cfg)
 
     filter_yaw   = OneEuroFilter(min_cutoff=cfg.FILTER_MIN_CUTOFF, beta=cfg.FILTER_BETA)
     filter_pitch = OneEuroFilter(min_cutoff=cfg.FILTER_MIN_CUTOFF, beta=cfg.FILTER_BETA)
+
+    # ── Voice commands ────────────────────────────────────────────────────────
+    _start_voice()
 
     print()
     print("MouseTracker running.  Hold your head in your NEUTRAL position —")
@@ -176,17 +215,23 @@ def main() -> None:
     print("  Q / ESC        — quit")
     print("  Double blink   — left click")
     print()
+    if magnet is not None:
+        print("  Cursor magnetism ON — cursor drifts toward nearby buttons.")
+    elif cfg.MAGNET_ENABLED and not _AX_AVAILABLE:
+        print("  Cursor magnetism OFF — grant Accessibility permission to enable.")
+    print()
     print("Tip: if cursor goes the wrong direction, flip INVERT_YAW / INVERT_PITCH in config.py")
 
     # ── Tracking loop ─────────────────────────────────────────────────────────
-    show_debug   = cfg.SHOW_DEBUG
-    yaw = pitch  = 0.0
-    ear          = 0.3
-    cursor_x     = screen_w // 2
-    cursor_y     = screen_h // 2
-    face_found   = False
-    blink_flash  = False          # brief visual indicator on click
-    flash_until  = 0.0
+    show_debug    = cfg.SHOW_DEBUG
+    yaw = pitch   = 0.0
+    ear           = 0.3
+    cursor_x      = screen_w // 2
+    cursor_y      = screen_h // 2
+    face_found    = False
+    blink_flash   = False          # brief visual indicator on click
+    flash_until   = 0.0
+    magnet_target = None
 
     while True:
         ret, frame = cap.read()
@@ -203,6 +248,7 @@ def main() -> None:
             yaw   = filter_yaw(raw_yaw)
             pitch = filter_pitch(raw_pitch)
             cursor_x, cursor_y = mouse.update(yaw, pitch)
+            magnet_target = magnet.current_target() if magnet is not None else None
 
             # Blink → click
             if blinker.update(ear):
@@ -219,7 +265,8 @@ def main() -> None:
             display = _draw_overlay(display, yaw, pitch, ear,
                                     cursor_x, cursor_y,
                                     screen_w, screen_h,
-                                    face_found, blink_flash)
+                                    face_found, blink_flash,
+                                    magnet_target)
             cv2.imshow("MouseTracker", display)
 
         # ── Keys ──────────────────────────────────────────────────────────────
@@ -238,6 +285,8 @@ def main() -> None:
             print(f"Debug window {'on' if show_debug else 'off'}.")
 
     # ── Cleanup ───────────────────────────────────────────────────────────────
+    if magnet is not None:
+        magnet.stop()
     tracker.close()
     cap.release()
     cv2.destroyAllWindows()

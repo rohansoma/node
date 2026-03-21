@@ -28,10 +28,11 @@ except Exception as e:
 
 class MouseController:
 
-    def __init__(self, screen_w: int, screen_h: int, cfg) -> None:
-        self._sw  = screen_w
-        self._sh  = screen_h
-        self._cfg = cfg
+    def __init__(self, screen_w: int, screen_h: int, cfg, magnet=None) -> None:
+        self._sw     = screen_w
+        self._sh     = screen_h
+        self._cfg    = cfg
+        self._magnet = magnet   # optional CursorMagnet instance
 
     def update(self, yaw_offset: float, pitch_offset: float) -> tuple[int, int]:
         """
@@ -54,6 +55,10 @@ class MouseController:
         # Screen Y is inverted: pitch up → cursor higher → smaller screen_y
         screen_x = self._sw / 2.0 + norm_x * self._sw / 2.0
         screen_y = self._sh / 2.0 - norm_y * self._sh / 2.0
+
+        # Apply cursor magnetism (potential-field attraction) before clamping
+        if self._magnet is not None:
+            screen_x, screen_y = self._magnet.update(screen_x, screen_y)
 
         screen_x = int(max(0, min(self._sw - 1, screen_x)))
         screen_y = int(max(0, min(self._sh - 1, screen_y)))
