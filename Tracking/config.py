@@ -1,7 +1,7 @@
 class Config:
     # ── Speed level tables ────────────────────────────────────────────────────
     # mouseSpeed 1-5: (MAX_YAW, MAX_PITCH) — higher = slower (more range needed)
-    _MOUSE_SPEED_TABLE = {1: (32, 22), 2: (26, 18), 3: (22, 15), 4: (15, 11), 5: (10, 7)}
+    _MOUSE_SPEED_TABLE = {1: (55, 38), 2: (42, 29), 3: (30, 21), 4: (20, 14), 5: (12, 8)}
     # scrollSpeed 1-5: SCROLL_SPEED_SCALE
     _SCROLL_SPEED_TABLE = {1: 8, 2: 13, 3: 20, 4: 30, 5: 45}
 

@@ -253,7 +253,12 @@ function createWindow() {
     // win.webContents.openDevTools();
 }
 
+const DEFAULT_SETTINGS = { mouseSpeed: 3, scrollSpeed: 3 };
+
 app.whenReady().then(() => {
+    // Always reset settings to defaults on launch — no persistence between sessions.
+    fs.writeFileSync(RUNTIME_CONFIG_PATH, JSON.stringify(DEFAULT_SETTINGS, null, 2));
+    trackingState.settings = { ...DEFAULT_SETTINGS };
     createWindow();
     startTracking();
 });
