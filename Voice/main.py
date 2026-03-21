@@ -65,7 +65,9 @@ def _voice_loop(cfg: VoiceConfig, agent: VoiceAgent) -> None:
       3. If transcript starts with "Hey Node" → extract command → Gemini.
       4. Otherwise → silent discard.
     """
-    print("[voice] ready — say 'Hey Node <command>'")
+    print()
+    print("[Voice] Ready.  Say 'Hey Node <command>' to activate.")
+    print()
 
     while True:
         try:
@@ -75,45 +77,58 @@ def _voice_loop(cfg: VoiceConfig, agent: VoiceAgent) -> None:
                 continue
 
             # ── 2. Transcribe ─────────────────────────────────────────────────
+            print("[Voice] Transcribing…", end="", flush=True)
             try:
                 transcript = transcribe(wav, cfg.ELEVENLABS_API_KEY)
             except RuntimeError as exc:
-                print(f"[voice] STT error: {exc}")
+                print(f"\n[Voice] STT error: {exc}")
                 continue
 
             if not transcript:
+                print(" (empty)")
                 continue
+
+            print(f"\n[Voice] Heard:   \"{transcript}\"")
 
             # ── 3. Wake phrase check ──────────────────────────────────────────
             command = extract_command(transcript)
 
             if command is None:
-                continue   # casual speech — silently discard
+                print("[Voice] ✗ No wake word — ignoring.")
+                continue
 
             if not command:
-                # Said just "Hey Node" — record the follow-up
+                # User said just "Hey Node" with nothing after.
+                print("[Voice] ✓ Wake word — listening for command…")
                 wav2 = record_command(cfg)
                 if not wav2:
                     continue
+                print("[Voice] Transcribing…", end="", flush=True)
                 try:
                     command = transcribe(wav2, cfg.ELEVENLABS_API_KEY).strip()
                 except RuntimeError:
+                    print(" (error)")
                     continue
                 if not command:
+                    print(" (empty)")
                     continue
+                print(f"\n[Voice] Heard:   \"{command}\"")
+
+            print(f"[Voice] ✓ Command: \"{command}\"")
 
             # ── 4. Process with Gemini ────────────────────────────────────────
-            print(f"\n◉  {command}")
             try:
                 reply = agent.process(command)
             except Exception as exc:
-                print(f"   [error] {exc}")
+                print(f"[Voice] Agent error: {exc}")
                 continue
 
-            print(f"   {reply}\n")
+            print(f"[Voice] {reply}")
+            print()
 
         except Exception as exc:
-            print(f"[voice] error: {exc}")
+            # Catch-all so a transient error never kills the background thread.
+            print(f"[Voice] Unexpected error: {exc}")
             time.sleep(1)
 
 

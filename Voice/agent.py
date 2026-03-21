@@ -134,6 +134,8 @@ class VoiceAgent:
         Runs the agentic function-call loop until Gemini returns a plain text
         response with no further tool calls.
         """
+        print(f'\nYou: "{text}"')
+
         response = self._chat.send_message(text)
 
         # ── Agentic loop ──────────────────────────────────────────────────────
@@ -152,8 +154,10 @@ class VoiceAgent:
                     except Exception as exc:
                         result = f"Error in {fc.name}: {exc}"
 
-                args_str = ", ".join(f"{v!r}" for v in fc.args.values())
-                print(f"   {fc.name}({args_str})")
+                # Show each function call in the terminal for visibility.
+                args_str = ", ".join(f"{k}={v!r}" for k, v in fc.args.items())
+                print(f"  ⚙  {fc.name}({args_str})")
+                print(f"     → {str(result)[:120]}")
 
                 result_parts.append(
                     types.Part.from_function_response(
