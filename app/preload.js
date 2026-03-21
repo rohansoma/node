@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld("handsfree", {
     getTrackingState: () => ipcRenderer.invoke("tracking:get-state"),
     startTracking: () => ipcRenderer.invoke("tracking:start"),
     stopTracking: () => ipcRenderer.invoke("tracking:stop"),
+    updateSettings: (updates) => ipcRenderer.invoke("tracking:update-settings", updates),
+    recalibrate: () => ipcRenderer.invoke("tracking:recalibrate"),
     onTrackingState: (callback) => {
         const listener = (_event, state) => callback(state);
         ipcRenderer.on("tracking:state", listener);

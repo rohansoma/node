@@ -15,6 +15,7 @@ in agent.py's TOOLS list.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import threading
@@ -140,11 +141,13 @@ def find_on_page(query: str) -> str:
     """
     if not _KB_AVAILABLE:
         return "Keyboard control unavailable — grant Accessibility permission to Terminal."
-    # Open find bar
-    with _kb.pressed(_KEY_MAP["cmd"]):
-        _kb.press("f")
-        _kb.release("f")
-    time.sleep(0.15)   # let the find bar appear
+    # Cmd+F to open find bar
+    cmd = _KEY_MAP["cmd"]
+    _kb.press(cmd)
+    _kb.press("f")
+    _kb.release("f")
+    _kb.release(cmd)
+    time.sleep(0.2)   # let the find bar appear
     _kb.type(query)
     return f'Find-in-page: "{query}"'
 
@@ -225,13 +228,19 @@ def press_keys(keys: str) -> str:
     if not _KB_AVAILABLE:
         return "Keyboard control unavailable — grant Accessibility permission to Terminal."
 
-    parts   = [k.strip().lower() for k in keys.split("+")]
+    parts = [k.strip().lower() for k in keys.split("+")]
+
+    # Resolve all keys before pressing anything
+    resolved = []
+    for part in parts:
+        key = _KEY_MAP.get(part) or (part if len(part) == 1 else None)
+        if key is None:
+            return f"Unknown key: '{part}'"
+        resolved.append(key)
+
     pressed = []
     try:
-        for part in parts:
-            key = _KEY_MAP.get(part) or (part if len(part) == 1 else None)
-            if key is None:
-                return f"Unknown key: '{part}'"
+        for key in resolved:
             _kb.press(key)
             pressed.append(key)
     finally:
@@ -295,7 +304,6 @@ def switch_chrome_tab(search: str) -> str:
 
 # Allowlist — only these settings may be changed by voice to prevent accidents.
 _ALLOWED = {
-    "MAX_YAW", "MAX_PITCH",
     "DEAD_ZONE_YAW", "DEAD_ZONE_PITCH",
     "SPEED_EXPONENT",
     "FILTER_MIN_CUTOFF", "FILTER_BETA",
@@ -305,9 +313,25 @@ _ALLOWED = {
     "BLINK_EAR_THRESHOLD",
 }
 
-_CONFIG_PATH = (
-    pathlib.Path(__file__).resolve().parent.parent / "Tracking" / "config.py"
-)
+_CONFIG_PATH   = pathlib.Path(__file__).resolve().parent.parent / "Tracking" / "config.py"
+_RUNTIME_PATH  = pathlib.Path(__file__).resolve().parent.parent / "Tracking" / "config.runtime.json"
+
+
+def _read_runtime() -> dict:
+    try:
+        if _RUNTIME_PATH.exists():
+            return json.loads(_RUNTIME_PATH.read_text())
+    except Exception:
+        pass
+    return {"mouseSpeed": 3, "scrollSpeed": 3}
+
+
+def _write_runtime(updates: dict) -> None:
+    rt = _read_runtime()
+    rt.update(updates)
+    _RUNTIME_PATH.write_text(json.dumps(rt, indent=2))
+    # Signal Electron to restart the tracker with the new config.
+    print(f"__HANDSFREE__{json.dumps({'type': 'restart_requested'})}", flush=True)
 
 
 def get_tracker_config() -> str:
@@ -326,6 +350,41 @@ def get_tracker_config() -> str:
     return "Current tracker config:\n" + "\n".join(lines)
 
 
+def set_mouse_speed(level: int) -> str:
+    """Set the mouse movement speed on a scale of 1 to 5.
+
+    1 = slowest (requires large head movements to reach screen edges).
+    5 = fastest (small head movements move the cursor far).
+    3 is the default.  Changes take effect after the tracker restarts.
+
+    Use this when the user says "mouse speed 4", "make the mouse faster",
+    "slow down the cursor", "set mouse to level 2", etc.
+
+    Args:
+        level: Speed level, 1 (slowest) to 5 (fastest).
+    """
+    level = max(1, min(5, int(level)))
+    _write_runtime({"mouseSpeed": level})
+    return f"Mouse speed set to {level}. Restarting tracker."
+
+
+def set_scroll_speed(level: int) -> str:
+    """Set the scroll speed on a scale of 1 to 5.
+
+    1 = slowest scroll, 5 = fastest scroll.  3 is the default.
+    Changes take effect after the tracker restarts.
+
+    Use this when the user says "scroll speed 2", "make scrolling faster",
+    "slower scroll", "set scroll to 4", etc.
+
+    Args:
+        level: Speed level, 1 (slowest) to 5 (fastest).
+    """
+    level = max(1, min(5, int(level)))
+    _write_runtime({"scrollSpeed": level})
+    return f"Scroll speed set to {level}. Restarting tracker."
+
+
 def change_tracker_config(setting: str, value: str) -> str:
     """Change a MouseTracker configuration setting.
 
@@ -333,7 +392,7 @@ def change_tracker_config(setting: str, value: str) -> str:
     tracker is restarted.
 
     Args:
-        setting: The config key to change, e.g. "MAX_YAW", "MAGNET_ENABLED".
+        setting: The config key to change, e.g. "DEAD_ZONE_YAW", "MAGNET_ENABLED".
                  Case-insensitive — will be uppercased automatically.
         value:   The new value as a string, e.g. "20.0", "True", "False", "130".
     """
@@ -360,4 +419,4 @@ def change_tracker_config(setting: str, value: str) -> str:
         return f"Setting '{key}' was not found in config.py."
 
     _CONFIG_PATH.write_text(new_text)
-    return f"Set {key} = {value}  (restart the tracker to apply)"
+    return f"Set {key} = {value} (restart the tracker to apply)"

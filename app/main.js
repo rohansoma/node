@@ -6,9 +6,25 @@ const path = require("path");
 const APP_ROOT = path.resolve(__dirname, "..");
 const TRACKING_DIR = path.join(APP_ROOT, "Tracking");
 const TRACKING_ENTRY = path.join(TRACKING_DIR, "main.py");
+const RUNTIME_CONFIG_PATH = path.join(TRACKING_DIR, "config.runtime.json");
+
+function readRuntimeConfig() {
+    try {
+        if (fs.existsSync(RUNTIME_CONFIG_PATH)) {
+            return JSON.parse(fs.readFileSync(RUNTIME_CONFIG_PATH, "utf8"));
+        }
+    } catch (_) {}
+    return { mouseSpeed: 3, scrollSpeed: 3 };
+}
+
+function writeRuntimeConfig(updates) {
+    const current = readRuntimeConfig();
+    fs.writeFileSync(RUNTIME_CONFIG_PATH, JSON.stringify({ ...current, ...updates }, null, 2));
+}
 
 let mainWindow = null;
 let trackingProcess = null;
+let pendingRestart = false;
 let trackingState = {
     status: "stopped",
     python: null,
@@ -18,6 +34,7 @@ let trackingState = {
     lastError: null,
     logs: [],
     telemetry: null,
+    settings: readRuntimeConfig(),
 };
 
 function pushLog(message, stream = "stdout") {
@@ -42,11 +59,11 @@ function handleTelemetryLine(line) {
     try {
         const payload = JSON.parse(line.slice("__HANDSFREE__".length));
         if (payload.type === "telemetry") {
-            trackingState = {
-                ...trackingState,
-                telemetry: payload,
-            };
+            trackingState = { ...trackingState, telemetry: payload };
             emitState();
+        } else if (payload.type === "restart_requested") {
+            pendingRestart = true;
+            stopTracking();
         }
         return true;
     } catch (error) {
@@ -193,6 +210,10 @@ function startTracking() {
         pushLog(`Tracking process exited with code ${code}`, "system");
         trackingProcess = null;
         emitState();
+        if (pendingRestart) {
+            pendingRestart = false;
+            startTracking();
+        }
     });
 
     return trackingState;
@@ -217,7 +238,7 @@ function stopTracking() {
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 700,
-        height: 750,
+        height: 500,
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
             contextIsolation: true,
@@ -240,6 +261,20 @@ app.whenReady().then(() => {
 ipcMain.handle("tracking:get-state", () => trackingState);
 ipcMain.handle("tracking:start", () => startTracking());
 ipcMain.handle("tracking:stop", () => stopTracking());
+ipcMain.handle("tracking:update-settings", (_, updates) => {
+    writeRuntimeConfig(updates);
+    trackingState = { ...trackingState, settings: readRuntimeConfig() };
+    emitState();
+    if (trackingProcess) {
+        pendingRestart = true;
+        stopTracking();
+    }
+    return trackingState;
+});
+
+ipcMain.handle("tracking:recalibrate", () => {
+    fs.writeFileSync(path.join(TRACKING_DIR, "recalibrate.flag"), "1");
+});
 
 app.on("window-all-closed", () => {
     if (trackingProcess) {

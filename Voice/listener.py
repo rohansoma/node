@@ -19,7 +19,7 @@ def record_command(cfg) -> bytes | None:
 
     captured, in_speech, silence_cnt = [], False, 0
 
-    print("🎙  Listening…")
+    print("  listening…")
 
     with sd.InputStream(samplerate=sr, channels=1, dtype="float32",
                         blocksize=chunk) as stream:
@@ -32,7 +32,7 @@ def record_command(cfg) -> bytes | None:
                 if rms >= cfg.VAD_RMS_THRESHOLD:
                     in_speech = True
                     captured.extend(pre_buf)
-                    print("⏺  Recording…", end="", flush=True)
+                    print(" recording…", end="", flush=True)
             else:
                 captured.append(data.copy())
                 silence_cnt = silence_cnt + 1 if rms < cfg.VAD_RMS_THRESHOLD else 0
@@ -40,7 +40,7 @@ def record_command(cfg) -> bytes | None:
                     break
 
     if not captured:
-        print("\n—  No speech detected.")
+        print("\r" + " " * 20 + "\r", end="", flush=True)
         return None
 
     print(" done.")

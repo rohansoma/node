@@ -33,6 +33,8 @@ from .commands import (
     switch_chrome_tab,
     get_tracker_config,
     change_tracker_config,
+    set_mouse_speed,
+    set_scroll_speed,
 )
 
 
@@ -54,6 +56,8 @@ TOOLS: list = [
     switch_chrome_tab,
     get_tracker_config,
     change_tracker_config,
+    set_mouse_speed,
+    set_scroll_speed,
 ]
 
 _TOOL_MAP: dict[str, object] = {fn.__name__: fn for fn in TOOLS}
@@ -83,6 +87,7 @@ Multi-step command rules:
 - "Undo" → press_keys("cmd+z"). "Redo" → press_keys("cmd+shift+z").
 - "Save" → press_keys("cmd+s"). "Close tab" → press_keys("cmd+w"). "New tab" → press_keys("cmd+t").
 - Always use wait() when a page needs time to load before the next interaction.
+- "Mouse speed 3", "make cursor faster/slower" → set_mouse_speed(level). "Scroll speed 4", "faster scroll" → set_scroll_speed(level). Levels are 1–5.
 """.strip()
 
 
@@ -134,8 +139,6 @@ class VoiceAgent:
         Runs the agentic function-call loop until Gemini returns a plain text
         response with no further tool calls.
         """
-        print(f'\nYou: "{text}"')
-
         response = self._chat.send_message(text)
 
         # ── Agentic loop ──────────────────────────────────────────────────────
@@ -154,10 +157,8 @@ class VoiceAgent:
                     except Exception as exc:
                         result = f"Error in {fc.name}: {exc}"
 
-                # Show each function call in the terminal for visibility.
                 args_str = ", ".join(f"{k}={v!r}" for k, v in fc.args.items())
-                print(f"  ⚙  {fc.name}({args_str})")
-                print(f"     → {str(result)[:120]}")
+                print(f"   {fc.name}({args_str})")
 
                 result_parts.append(
                     types.Part.from_function_response(
