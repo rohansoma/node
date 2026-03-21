@@ -1,4 +1,26 @@
 class Config:
+    # ── Speed level tables ────────────────────────────────────────────────────
+    # mouseSpeed 1-5: (MAX_YAW, MAX_PITCH) — higher = slower (more range needed)
+    _MOUSE_SPEED_TABLE = {1: (32, 22), 2: (26, 18), 3: (22, 15), 4: (15, 11), 5: (10, 7)}
+    # scrollSpeed 1-5: SCROLL_SPEED_SCALE
+    _SCROLL_SPEED_TABLE = {1: 8, 2: 13, 3: 20, 4: 30, 5: 45}
+
+    def __init__(self) -> None:
+        import json as _json
+        import pathlib as _pathlib
+        _rt = _pathlib.Path(__file__).with_name("config.runtime.json")
+        if _rt.exists():
+            try:
+                rt = _json.loads(_rt.read_text())
+                ms = max(1, min(5, int(rt.get("mouseSpeed", 3))))
+                ss = max(1, min(5, int(rt.get("scrollSpeed", 3))))
+                yaw, pitch = self._MOUSE_SPEED_TABLE[ms]
+                self.MAX_YAW   = float(yaw)
+                self.MAX_PITCH = float(pitch)
+                self.SCROLL_SPEED_SCALE = float(self._SCROLL_SPEED_TABLE[ss])
+            except Exception:
+                pass
+
     # ── Camera ───────────────────────────────────────────────────────────────
     CAMERA_INDEX = 0
     FRAME_WIDTH  = 640
@@ -7,8 +29,8 @@ class Config:
     # ── Head angle range ─────────────────────────────────────────────────────
     # Degrees of head rotation that maps to the full screen edge.
     # Smaller = more sensitive (less head movement needed).
-    MAX_YAW   = 18.0   # left/right
-    MAX_PITCH = 12.0   # up/down
+    MAX_YAW   = 22.0   # left/right  (level 3 default — slightly slower)
+    MAX_PITCH = 15.0   # up/down
 
     # ── Dead zone ────────────────────────────────────────────────────────────
     # Degrees of head movement to ignore around neutral.

@@ -45,13 +45,13 @@ class ScrollController:
         with self._lock:
             self._enabled = True
             self._accum   = 0.0
-        print("[Scroll] Scroll mode ON")
+        print("[scroll ON]")
 
     def disable(self) -> None:
         with self._lock:
             self._enabled = False
             self._accum   = 0.0
-        print("[Scroll] Scroll mode OFF")
+        print("[scroll OFF]")
 
     def update(self, pitch_offset: float) -> None:
         """

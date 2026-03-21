@@ -41,6 +41,10 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 
+# Written by Electron when the user presses R in the app UI.
+_RECAL_FLAG = pathlib.Path(__file__).parent / "recalibrate.flag"
+
+
 def _start_voice() -> None:
     """Try to start the voice command thread. Silently skips if not configured."""
     try:
@@ -235,7 +239,6 @@ def main() -> None:
         cfg.SHOW_DEBUG = False
 
     screen_w, screen_h = _get_screen_size()
-    print(f"Screen: {screen_w}×{screen_h} logical px")
 
     # ── Camera ────────────────────────────────────────────────────────────────
     cap = cv2.VideoCapture(cfg.CAMERA_INDEX)
@@ -247,7 +250,6 @@ def main() -> None:
 
     actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    print(f"Camera: {actual_w}×{actual_h}")
 
     # ── Components ────────────────────────────────────────────────────────────
     tracker      = HeadTracker(actual_w, actual_h)
@@ -262,22 +264,9 @@ def main() -> None:
     # ── Voice commands ────────────────────────────────────────────────────────
     _start_voice()
 
-    print()
-    print("MouseTracker running.  Hold your head in your NEUTRAL position —")
-    print("the first detected frame sets the centre point.")
-    print()
-    if not embedded_mode:
-        print("  R              — recalibrate neutral")
-        print("  S              — toggle debug window")
-    print("  Q / ESC        — quit")
-    print("  Double blink   — left click")
-    print()
-    if magnet is not None:
-        print("  Cursor magnetism ON — cursor drifts toward nearby buttons.")
-    elif cfg.MAGNET_ENABLED and not _AX_AVAILABLE:
-        print("  Cursor magnetism OFF — grant Accessibility permission to enable.")
-    print()
-    print("Tip: if cursor goes the wrong direction, flip INVERT_YAW / INVERT_PITCH in config.py")
+    magnet_status = "ON" if magnet is not None else ("OFF (needs Accessibility)" if cfg.MAGNET_ENABLED else "OFF")
+    print(f"\nMouseTracker  {screen_w}×{screen_h}  │  camera {actual_w}×{actual_h}  │  magnet {magnet_status}")
+    print("double-blink: click   triple-blink: scroll toggle   R: recalibrate   Q: quit\n")
 
     # ── Tracking loop ─────────────────────────────────────────────────────────
     try:
@@ -301,13 +290,19 @@ def main() -> None:
             print("Error: failed to read camera frame")
             break
 
-        # ── Voice-requested recalibration ─────────────────────────────────────
-        if _recal_event is not None and _recal_event.is_set():
-            _recal_event.clear()
+        # ── Recalibration (voice event or UI flag file) ───────────────────────
+        _voice_recal = _recal_event is not None and _recal_event.is_set()
+        _ui_recal    = _RECAL_FLAG.exists()
+        if _voice_recal or _ui_recal:
+            if _voice_recal and _recal_event is not None:
+                _recal_event.clear()
+            if _ui_recal:
+                try: _RECAL_FLAG.unlink()
+                except OSError: pass
             tracker.reset_neutral()
             filter_yaw.reset()
             filter_pitch.reset()
-            print("Neutral recalibrated (voice command).")
+            print("[recalibrated]")
 
         result = tracker.process(frame)
 
@@ -340,14 +335,10 @@ def main() -> None:
             face_found = False
 
         blink_flash = time.monotonic() < flash_until
-        _emit_telemetry(
-            screen_w=screen_w,
-            screen_h=screen_h,
-            cursor_x=cursor_x,
-            cursor_y=cursor_y,
-            face_found=face_found,
-            magnet_target=magnet_target,
-        )
+
+        if embedded_mode:
+            _emit_telemetry(screen_w, screen_h, cursor_x, cursor_y,
+                            face_found, magnet_target)
 
         # ── Display ───────────────────────────────────────────────────────────
         if show_debug:
@@ -369,7 +360,7 @@ def main() -> None:
                 tracker.reset_neutral()
                 filter_yaw.reset()
                 filter_pitch.reset()
-                print("Neutral recalibrated — hold still for a moment.")
+                print("[recalibrated]")
             elif key == ord('s'):
                 show_debug = not show_debug
                 if not show_debug:
