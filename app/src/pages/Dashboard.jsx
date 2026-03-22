@@ -6,7 +6,7 @@ function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
 function formatLog(logs) {
     return logs
-        .filter((l) => l.message && !l.message.startsWith("Started Tracking"))
+        .filter((l) => l.message && !l.message.startsWith("Started Tracking") && !l.message.startsWith("__HANDSFREE__"))
         .slice(-8);
 }
 

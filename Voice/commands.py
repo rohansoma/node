@@ -26,16 +26,22 @@ import pathlib
 
 try:
     from pynput.keyboard import Controller as _KbController, Key as _Key
+    from pynput.mouse import Controller as _MouseController, Button as _Button
     _kb = _KbController()
-    _KB_AVAILABLE = True
+    _mouse = _MouseController()
+    _INPUT_AVAILABLE = True
 except Exception:
     _kb = None
     _Key = None
-    _KB_AVAILABLE = False
+    _mouse = None
+    _Button = None
+    _INPUT_AVAILABLE = False
 
 # Signalled by recalibrate(); checked each frame in Tracking/main.py.
 recalibrate_event = threading.Event()
 
+_KB_ERR = "Keyboard control unavailable — grant Accessibility permission to Terminal."
+_MOUSE_ERR = "Mouse control unavailable — grant Accessibility permission to Terminal."
 
 # Maps natural-language key names → pynput Key constants.
 _KEY_MAP: dict[str, object] = {}
@@ -139,14 +145,9 @@ def find_on_page(query: str) -> str:
     Args:
         query: The text to find on the current page.
     """
-    if not _KB_AVAILABLE:
-        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
-    # Cmd+F to open find bar
-    cmd = _KEY_MAP["cmd"]
-    _kb.press(cmd)
-    _kb.press("f")
-    _kb.release("f")
-    _kb.release(cmd)
+    if not _INPUT_AVAILABLE:
+        return _KB_ERR
+    press_keys("cmd+f")
     time.sleep(0.2)   # let the find bar appear
     _kb.type(query)
     return f'Find-in-page: "{query}"'
@@ -193,10 +194,39 @@ def type_text(text: str) -> str:
     Args:
         text: The exact text to type.
     """
-    if not _KB_AVAILABLE:
-        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
+    if not _INPUT_AVAILABLE:
+        return _KB_ERR
     _kb.type(text)
     return f'Typed: "{text}"'
+
+
+def replace_text(text: str) -> str:
+    """Replace all text in the currently focused input field with new text.
+
+    Use this when the user says "retype", "replace with", "change it to",
+    "write instead", or "replace the text with" — i.e. when they want to
+    overwrite what is already in a field rather than append to it.
+
+    Args:
+        text: The new text to put in the field, replacing whatever was there.
+    """
+    if not _INPUT_AVAILABLE:
+        return _KB_ERR
+    press_keys("cmd+a")
+    time.sleep(0.05)  # let the selection settle before typing
+    _kb.type(text)
+    return f'Replaced field contents with: "{text}"'
+
+
+def right_click() -> str:
+    """Right-click at the current mouse cursor position.
+
+    Use this when the user says "right click", "context menu", or "secondary click".
+    """
+    if not _INPUT_AVAILABLE:
+        return _MOUSE_ERR
+    _mouse.click(_Button.right)
+    return "Right-clicked."
 
 
 def press_keys(keys: str) -> str:
@@ -225,12 +255,11 @@ def press_keys(keys: str) -> str:
               "cmd+shift+3".  Single characters are typed as-is (e.g. "a").
               Always use lowercase.
     """
-    if not _KB_AVAILABLE:
-        return "Keyboard control unavailable — grant Accessibility permission to Terminal."
+    if not _INPUT_AVAILABLE:
+        return _KB_ERR
 
     parts = [k.strip().lower() for k in keys.split("+")]
 
-    # Resolve all keys before pressing anything
     resolved = []
     for part in parts:
         key = _KEY_MAP.get(part) or (part if len(part) == 1 else None)
@@ -319,11 +348,9 @@ _RUNTIME_PATH  = pathlib.Path(__file__).resolve().parent.parent / "Tracking" / "
 
 def _read_runtime() -> dict:
     try:
-        if _RUNTIME_PATH.exists():
-            return json.loads(_RUNTIME_PATH.read_text())
+        return json.loads(_RUNTIME_PATH.read_text())
     except Exception:
-        pass
-    return {"mouseSpeed": 3, "scrollSpeed": 3}
+        return {"mouseSpeed": 3, "scrollSpeed": 3}
 
 
 def _write_runtime(updates: dict) -> None:
@@ -332,6 +359,12 @@ def _write_runtime(updates: dict) -> None:
     _RUNTIME_PATH.write_text(json.dumps(rt, indent=2))
     # Signal Electron to restart the tracker with the new config.
     print(f"__HANDSFREE__{json.dumps({'type': 'restart_requested'})}", flush=True)
+
+
+def _set_speed(key: str, noun: str, level: int) -> str:
+    level = max(1, min(5, int(level)))
+    _write_runtime({key: level})
+    return f"{noun} speed set to {level}. Restarting tracker."
 
 
 def get_tracker_config() -> str:
@@ -363,9 +396,7 @@ def set_mouse_speed(level: int) -> str:
     Args:
         level: Speed level, 1 (slowest) to 5 (fastest).
     """
-    level = max(1, min(5, int(level)))
-    _write_runtime({"mouseSpeed": level})
-    return f"Mouse speed set to {level}. Restarting tracker."
+    return _set_speed("mouseSpeed", "Mouse", level)
 
 
 def set_scroll_speed(level: int) -> str:
@@ -380,9 +411,7 @@ def set_scroll_speed(level: int) -> str:
     Args:
         level: Speed level, 1 (slowest) to 5 (fastest).
     """
-    level = max(1, min(5, int(level)))
-    _write_runtime({"scrollSpeed": level})
-    return f"Scroll speed set to {level}. Restarting tracker."
+    return _set_speed("scrollSpeed", "Scroll", level)
 
 
 def change_tracker_config(setting: str, value: str) -> str:

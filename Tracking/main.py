@@ -294,7 +294,7 @@ def main() -> None:
         _voice_recal = _recal_event is not None and _recal_event.is_set()
         _ui_recal    = _RECAL_FLAG.exists()
         if _voice_recal or _ui_recal:
-            if _voice_recal and _recal_event is not None:
+            if _voice_recal:
                 _recal_event.clear()
             if _ui_recal:
                 try: _RECAL_FLAG.unlink()

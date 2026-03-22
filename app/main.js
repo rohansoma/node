@@ -10,9 +10,7 @@ const RUNTIME_CONFIG_PATH = path.join(TRACKING_DIR, "config.runtime.json");
 
 function readRuntimeConfig() {
     try {
-        if (fs.existsSync(RUNTIME_CONFIG_PATH)) {
-            return JSON.parse(fs.readFileSync(RUNTIME_CONFIG_PATH, "utf8"));
-        }
+        return JSON.parse(fs.readFileSync(RUNTIME_CONFIG_PATH, "utf8"));
     } catch (_) {}
     return { mouseSpeed: 3, scrollSpeed: 3 };
 }
@@ -39,7 +37,7 @@ let trackingState = {
 
 function pushLog(message, stream = "stdout") {
     const line = String(message ?? "").trim();
-    if (!line) {
+    if (!line || line.startsWith("__HANDSFREE__")) {
         return;
     }
 
@@ -47,7 +45,6 @@ function pushLog(message, stream = "stdout") {
 
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("tracking:log", trackingState.logs[trackingState.logs.length - 1]);
-        mainWindow.webContents.send("tracking:state", trackingState);
     }
 }
 
@@ -246,11 +243,7 @@ function createWindow() {
         },
     });
 
-    // Load Vite dev server
     mainWindow.loadURL("http://localhost:5173");
-
-    // Optional: open dev tools
-    // win.webContents.openDevTools();
 }
 
 const DEFAULT_SETTINGS = { mouseSpeed: 3, scrollSpeed: 3 };
@@ -268,7 +261,7 @@ ipcMain.handle("tracking:start", () => startTracking());
 ipcMain.handle("tracking:stop", () => stopTracking());
 ipcMain.handle("tracking:update-settings", (_, updates) => {
     writeRuntimeConfig(updates);
-    trackingState = { ...trackingState, settings: readRuntimeConfig() };
+    trackingState = { ...trackingState, settings: { ...trackingState.settings, ...updates } };
     emitState();
     if (trackingProcess) {
         pendingRestart = true;
