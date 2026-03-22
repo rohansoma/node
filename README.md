@@ -65,7 +65,7 @@ Voice features will stay disabled if the required keys are missing.
 
 ### Desktop App Setup
 
-From [app](/Users/nathank/repos/handsfree/app):
+From [app](https://github.com/rohansoma/node/tree/main/app):
 
 ```bash
 npm install
@@ -102,7 +102,7 @@ The app currently supports:
 - Recalibration
 - Scroll-mode toggling
 
-Runtime tracking settings are stored in [Tracking/config.runtime.json](/Users/nathank/repos/handsfree/Tracking/config.runtime.json).
+Runtime tracking settings are stored in [Tracking/config.runtime.json](https://github.com/rohansoma/node/blob/main/Tracking/config.runtime.json).
 
 ## Technologies Used
 
