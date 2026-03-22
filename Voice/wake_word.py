@@ -31,10 +31,12 @@ def extract_command(transcript: str) -> str | None:
     if len(words) < 2:
         return None
 
-    if words[0].lower() in _HEY_WORDS and words[1].lower() in _NODE_WORDS:
-        # Find where the 3rd word starts in the ORIGINAL transcript and return from there
-        # This preserves dots, commas etc. in the command (e.g. "google.com")
-        original_words = transcript.split()
-        return " ".join(original_words[2:]).strip()
+    # Scan for "hey node" anywhere in the utterance (handles pre-speech before the wake phrase)
+    for i in range(len(words) - 1):
+        if words[i].lower() in _HEY_WORDS and words[i + 1].lower() in _NODE_WORDS:
+            # Find where the word after "node" starts in the ORIGINAL transcript
+            # This preserves dots, commas etc. in the command (e.g. "google.com")
+            original_words = transcript.split()
+            return " ".join(original_words[i + 2:]).strip()
 
     return None
