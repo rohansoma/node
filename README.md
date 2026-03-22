@@ -12,9 +12,9 @@ Node is a hands-free desktop control. It combines head tracking, blink gestures,
 
 ## Project Structure
 
-- [Tracking](/Users/nathank/repos/handsfree/Tracking): Python tracking engine for webcam input, head pose, blink detection, cursor movement, and scrolling
-- [Voice](/Users/nathank/repos/handsfree/Voice): Voice-command system, wake-word flow, tool execution, and Gemini agent integration
-- [app](/Users/nathank/repos/handsfree/app): Electron + React desktop app and landing page
+- [Tracking](https://github.com/rohansoma/node/tree/main/Tracking): Python tracking engine for webcam input, head pose, blink detection, cursor movement, and scrolling
+- [Voice](https://github.com/rohansoma/node/tree/main/Voice): Voice-command system, wake-word flow, tool execution, and Gemini agent integration
+- [app](https://github.com/rohansoma/node/tree/main/app): Electron + React desktop app and landing page
 
 ## How It Works
 
@@ -105,13 +105,6 @@ The app currently supports:
 Runtime tracking settings are stored in [Tracking/config.runtime.json](/Users/nathank/repos/handsfree/Tracking/config.runtime.json).
 
 ## Technologies Used
-
-### Languages
-
-- Python
-- JavaScript
-- HTML
-- CSS
 
 ### Frontend and Desktop
 
